@@ -1,6 +1,6 @@
-# URL Checker (Go Version)
+# URL Checker
 
-批量URL请求工具，Go语言重写版。保持原始URL不变发送。
+批量URL请求工具，Go语言编写。
 
 ## 功能特性
 
@@ -108,9 +108,3 @@ http://example.org/path
 ```bash
 ./url-checker.exe -i urls.txt --no-ssl-verify
 ```
-
-## 终止任务
-
-按 `Ctrl+C` 可安全终止任务：
-- 首次：等待当前任务完成
-- 再次：强制终止

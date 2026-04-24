@@ -13,4 +13,9 @@ go.sum
 .vscode/
 
 # Claude
-.claude/settings.local.json
+.claude/
+CLAUDE.md
+
+# git
+./git
+.gitignore

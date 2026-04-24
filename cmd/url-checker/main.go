@@ -53,7 +53,7 @@ func main() {
 	sem := make(chan struct{}, *workers)
 
 	var wg util.WaitGroup
-	resultChan := make(chan checker.Result, 100)
+	resultChan := make(chan checker.Result, len(urls)*2)
 	var completed int64
 	total := len(urls) * 2
 

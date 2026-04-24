@@ -73,6 +73,10 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		conn = tlsConn
 	}
 
+	// 设置读写超时，防止连接建立后卡住
+	deadline := time.Now().Add(30 * time.Second)
+	conn.SetDeadline(deadline)
+
 	defer conn.Close()
 
 	path = req.URL.EscapedPath()
@@ -118,10 +122,15 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	reader := bufio.NewReader(conn)
 
+	// 读取状态行时设置更短的超时
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+
 	statusLine, err := reader.ReadString('\n')
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("读取状态行超时: %w", err)
 	}
+	// 恢复整体 deadline
+	conn.SetDeadline(deadline)
 	statusLine = strings.TrimSpace(statusLine)
 
 	parts := strings.SplitN(statusLine, " ", 3)
