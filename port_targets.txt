@@ -1,0 +1,4 @@
+tkact.mobile.taikang.com
+tkacttest.mobile.taikang.com
+tkact.taikang.com
+tkacttest.taikang.com

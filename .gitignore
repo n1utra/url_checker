@@ -1,0 +1,16 @@
+# 编译产物
+url-checker.exe
+
+# 临时文件
+*.csv
+!targets.txt
+
+# Go
+go.sum
+
+# IDE
+.idea/
+.vscode/
+
+# Claude
+.claude/settings.local.json
