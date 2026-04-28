@@ -3,10 +3,12 @@ package checker
 import (
 	"bufio"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -14,21 +16,11 @@ import (
 // RawTransport 直接使用原始URL发送请求，绕过标准库URL规范化
 type RawTransport struct {
 	TLSConfig *tls.Config
+	ProxyURL  *url.URL
 }
 
 // RoundTrip 实现http.RoundTripper接口
 func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	path := req.URL.Path
-	if req.URL.Opaque != "" {
-		path = req.URL.Opaque
-	}
-	if path == "" {
-		path = "/"
-	}
-	if req.URL.RawQuery != "" {
-		path += "?" + req.URL.RawQuery
-	}
-
 	host := req.URL.Host
 	if host == "" {
 		host = req.Host
@@ -43,7 +35,7 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 
-	addr := net.JoinHostPort(host, port)
+	targetAddr := net.JoinHostPort(host, port)
 
 	var conn net.Conn
 	var err error
@@ -52,25 +44,63 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		Timeout: 30 * time.Second,
 	}
 
-	conn, err = dialer.Dial("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
+	// 确定连接目标和地址
+	if rt.ProxyURL != nil {
+		proxyHost := rt.ProxyURL.Hostname()
+		proxyPort := rt.ProxyURL.Port()
+		if proxyPort == "" {
+			proxyPort = "8080"
+		}
+		proxyAddr := net.JoinHostPort(proxyHost, proxyPort)
 
-	if req.URL.Scheme == "https" {
-		tlsConfig := rt.TLSConfig
-		if tlsConfig == nil {
-			tlsConfig = &tls.Config{}
+		conn, err = dialer.Dial("tcp", proxyAddr)
+		if err != nil {
+			return nil, fmt.Errorf("连接代理失败: %w", err)
 		}
-		tlsConn := tls.Client(conn, &tls.Config{
-			ServerName:         host,
-			InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
-		})
-		if err := tlsConn.Handshake(); err != nil {
-			conn.Close()
-			return nil, fmt.Errorf("TLS握手失败: %w", err)
+
+		if req.URL.Scheme == "https" {
+			// HTTPS通过代理: CONNECT隧道
+			err = rt.proxyConnect(conn, targetAddr)
+			if err != nil {
+				conn.Close()
+				return nil, err
+			}
+
+			tlsConfig := rt.TLSConfig
+			if tlsConfig == nil {
+				tlsConfig = &tls.Config{}
+			}
+			tlsConn := tls.Client(conn, &tls.Config{
+				ServerName:         host,
+				InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
+			})
+			if err := tlsConn.Handshake(); err != nil {
+				conn.Close()
+				return nil, fmt.Errorf("TLS握手失败: %w", err)
+			}
+			conn = tlsConn
 		}
-		conn = tlsConn
+	} else {
+		conn, err = dialer.Dial("tcp", targetAddr)
+		if err != nil {
+			return nil, err
+		}
+
+		if req.URL.Scheme == "https" {
+			tlsConfig := rt.TLSConfig
+			if tlsConfig == nil {
+				tlsConfig = &tls.Config{}
+			}
+			tlsConn := tls.Client(conn, &tls.Config{
+				ServerName:         host,
+				InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
+			})
+			if err := tlsConn.Handshake(); err != nil {
+				conn.Close()
+				return nil, fmt.Errorf("TLS握手失败: %w", err)
+			}
+			conn = tlsConn
+		}
 	}
 
 	// 设置读写超时，防止连接建立后卡住
@@ -79,15 +109,20 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	defer conn.Close()
 
-	path = req.URL.EscapedPath()
-	if path == "" {
-		path = "/"
+	// 构建请求路径(使用代理时HTTP请求需要完整URL)
+	var requestLine string
+	if rt.ProxyURL != nil && req.URL.Scheme == "http" {
+		requestLine = fmt.Sprintf("%s %s HTTP/1.1\r\n", req.Method, req.URL.String())
+	} else {
+		path := req.URL.EscapedPath()
+		if path == "" {
+			path = "/"
+		}
+		if req.URL.RawQuery != "" {
+			path += "?" + req.URL.RawQuery
+		}
+		requestLine = fmt.Sprintf("%s %s HTTP/1.1\r\n", req.Method, path)
 	}
-	if req.URL.RawQuery != "" {
-		path += "?" + req.URL.RawQuery
-	}
-
-	requestLine := fmt.Sprintf("%s %s HTTP/1.1\r\n", req.Method, path)
 
 	headerLines := []string{fmt.Sprintf("Host: %s", host)}
 
@@ -110,13 +145,21 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		headerLines = append(headerLines, "Connection: close")
 	}
 
-	request := requestLine
-	for _, line := range headerLines {
-		request += line + "\r\n"
+	// 添加代理认证头
+	if rt.ProxyURL != nil && rt.ProxyURL.User != nil {
+		auth := rt.ProxyURL.User.String()
+		headerLines = append(headerLines, fmt.Sprintf("Proxy-Authorization: Basic %s", base64.StdEncoding.EncodeToString([]byte(auth))))
 	}
-	request += "\r\n"
 
-	if _, err := conn.Write([]byte(request)); err != nil {
+	var request strings.Builder
+	request.WriteString(requestLine)
+	for _, line := range headerLines {
+		request.WriteString(line)
+		request.WriteString("\r\n")
+	}
+	request.WriteString("\r\n")
+
+	if _, err := conn.Write([]byte(request.String())); err != nil {
 		return nil, err
 	}
 
@@ -169,11 +212,50 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 
-	body, err := io.ReadAll(reader)
-	if err != nil {
-		// 记录错误但仍然返回已读取的内容
-	}
+	body, _ := io.ReadAll(reader)
 	response.Body = io.NopCloser(strings.NewReader(string(body)))
 
 	return response, nil
+}
+
+// proxyConnect 发送CONNECT请求建立HTTPS隧道
+func (rt *RawTransport) proxyConnect(conn net.Conn, targetAddr string) error {
+	req := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n", targetAddr, targetAddr)
+
+	if rt.ProxyURL.User != nil {
+		auth := rt.ProxyURL.User.String()
+		req += fmt.Sprintf("Proxy-Authorization: Basic %s\r\n", base64.StdEncoding.EncodeToString([]byte(auth)))
+	}
+	req += "\r\n"
+
+	if _, err := conn.Write([]byte(req)); err != nil {
+		return fmt.Errorf("发送CONNECT请求失败: %w", err)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	reader := bufio.NewReader(conn)
+	statusLine, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("读取CONNECT响应失败: %w", err)
+	}
+	// 恢复 deadline在调用方处理
+
+	statusLine = strings.TrimSpace(statusLine)
+	parts := strings.SplitN(statusLine, " ", 3)
+	if len(parts) < 2 || parts[1] != "200" {
+		return fmt.Errorf("代理CONNECT失败: %s", statusLine)
+	}
+
+	// 读取CONNECT响应的剩余部分(头部+空行)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("读取CONNECT响应头失败: %w", err)
+		}
+		if strings.TrimSpace(line) == "" {
+			break
+		}
+	}
+
+	return nil
 }

@@ -7,5 +7,4 @@ const (
 	ColorCyan   = "\033[96m"
 	ColorYellow = "\033[93m"
 	ColorRed    = "\033[91m"
-	ColorGray   = "\033[90m"
 )

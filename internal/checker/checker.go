@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -34,20 +35,18 @@ type Result struct {
 	Protocol    string
 }
 
-// CreateClient 创建HTTP客户端
-func CreateClient(sslVerify bool) *http.Client {
+// CreateClient 创建HTTP客户端（默认跳过SSL证书验证）
+func CreateClient(proxyURL *url.URL) *http.Client {
 	transport := &RawTransport{
 		TLSConfig: &tls.Config{
-			InsecureSkipVerify: !sslVerify,
+			InsecureSkipVerify: true,
 		},
+		ProxyURL: proxyURL,
 	}
 
 	return &http.Client{
 		Transport: transport,
 		Timeout:   DefaultTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return nil
-		},
 	}
 }
 
@@ -150,9 +149,10 @@ func getProtocol(urlStr string) string {
 	return "HTTP"
 }
 
+var titleRegex = regexp.MustCompile(`(?i)<title[^>]*>([^<]+)</title>`)
+
 func extractTitle(body string) string {
-	re := regexp.MustCompile(`(?i)<title[^>]*>([^<]+)</title>`)
-	matches := re.FindStringSubmatch(body)
+	matches := titleRegex.FindStringSubmatch(body)
 	if len(matches) >= 2 {
 		return strings.TrimSpace(matches[1])
 	}
@@ -161,12 +161,14 @@ func extractTitle(body string) string {
 
 func truncate(data []byte, maxLen int) string {
 	if len(data) == 0 {
-		return "null"
+		return ""
 	}
-	if len(data) > maxLen {
-		return string(data[:maxLen])
+	s := string(data)
+	runes := []rune(s)
+	if len(runes) > maxLen {
+		return string(runes[:maxLen])
 	}
-	return string(data)
+	return s
 }
 
 func md5Hash(data []byte) string {

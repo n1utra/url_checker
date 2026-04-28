@@ -12,34 +12,26 @@ import (
 
 var illegalChars = regexp.MustCompile(`[\x00-\x08\x0b\x0c\x0e-\x1f]`)
 
-// Result 结果类型别名
-type Result = checker.Result
-
 const (
 	maxColWidth = 50
 )
 
 // WriteResults 将结果写入xlsx文件（成功/失败分sheet）
-func WriteResults(results []Result, outputFile string) error {
+func WriteResults(results []checker.Result, outputFile string) error {
 	f := excelize.NewFile()
 	defer f.Close()
 
-	// 删除默认的Sheet1
 	f.DeleteSheet("Sheet1")
 
-	// 创建成功结果sheet
 	sheetRes := "res"
 	f.NewSheet(sheetRes)
 
-	// 创建失败结果sheet
 	sheetErr := "err"
 	f.NewSheet(sheetErr)
 
-	// 设置表头
 	setHeader(f, sheetRes, []string{"ID", "URL", "域名/IP", "响应状态码", "Content-Type", "响应体长度", "响应标题", "响应正文前100字符"})
 	setHeader(f, sheetErr, []string{"ID", "URL", "错误信息"})
 
-	// 写入数据
 	successCount := 0
 	errCount := 0
 
@@ -58,11 +50,9 @@ func WriteResults(results []Result, outputFile string) error {
 		}
 	}
 
-	// 设置列宽
 	setColumnWidth(f, sheetRes, []float64{8, 50, 30, 12, 30, 12, 30, 50})
 	setColumnWidth(f, sheetErr, []float64{8, 50, 50})
 
-	// 保存文件
 	if err := f.SaveAs(outputFile); err != nil {
 		return fmt.Errorf("保存文件失败: %w", err)
 	}
@@ -83,7 +73,7 @@ func setHeader(f *excelize.File, sheet string, headers []string) {
 	}
 }
 
-func writeSuccessRow(f *excelize.File, sheet string, r Result, id int) {
+func writeSuccessRow(f *excelize.File, sheet string, r checker.Result, id int) {
 	row := []interface{}{
 		id,
 		cleanIllegalChars(r.URL),
@@ -100,7 +90,7 @@ func writeSuccessRow(f *excelize.File, sheet string, r Result, id int) {
 	}
 }
 
-func writeErrorRow(f *excelize.File, sheet string, r Result, id int) {
+func writeErrorRow(f *excelize.File, sheet string, r checker.Result, id int) {
 	row := []interface{}{
 		id,
 		cleanIllegalChars(r.URL),
@@ -124,7 +114,7 @@ func cleanIllegalChars(s string) string {
 }
 
 // DisplayResult 显示结果
-func DisplayResult(r Result, completed, total int) {
+func DisplayResult(r checker.Result, completed, total int) {
 	protocol := r.Protocol
 	if protocol == "" {
 		protocol = "URL"
@@ -140,8 +130,8 @@ func DisplayResult(r Result, completed, total int) {
 		title := r.Title
 		if title == "" {
 			title = "N/A"
-		} else if len(title) > 30 {
-			title = title[:30]
+		} else if len([]rune(title)) > 30 {
+			title = string([]rune(title)[:30])
 		}
 
 		line := fmt.Sprintf("✓ %3d/%d  [%s]  %-45s [code] %3d  [len] %8d  [title] %s",
@@ -159,19 +149,18 @@ func DisplayResult(r Result, completed, total int) {
 }
 
 func getStatusColor(statusCode int) string {
-	if statusCode >= 200 && statusCode < 300 {
+	switch {
+	case statusCode >= 200 && statusCode < 300:
 		return util.ColorGreen
-	}
-	if statusCode >= 300 && statusCode < 400 {
+	case statusCode >= 300 && statusCode < 400:
 		return util.ColorCyan
-	}
-	if statusCode >= 400 && statusCode < 500 {
+	case statusCode >= 400 && statusCode < 500:
 		return util.ColorYellow
-	}
-	if statusCode >= 500 && statusCode < 600 {
+	case statusCode >= 500 && statusCode < 600:
 		return util.ColorRed
+	default:
+		return util.ColorReset
 	}
-	return util.ColorReset
 }
 
 func colorize(text string, color string) string {

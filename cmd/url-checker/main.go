@@ -3,8 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"url-checker/internal/checker"
 	"url-checker/internal/output"
@@ -17,8 +20,7 @@ func main() {
 	timeout := flag.Int("t", 10, "请求超时时间(秒)")
 	workers := flag.Int("w", 10, "并发线程数")
 	headersStr := flag.String("H", "", "自定义请求头，格式: Header1: value1, Header2: value2")
-	noSSLVerify := flag.Bool("no-ssl-verify", false, "禁用SSL证书验证")
-	verbose := flag.Bool("v", false, "显示详细日志")
+	proxyStr := flag.String("proxy", "", "代理地址, 格式: http://[user:pass@]host:port")
 
 	flag.Parse()
 
@@ -47,15 +49,24 @@ func main() {
 	fmt.Printf("共读取 %d 个URL，开始发送请求 (并发数: %d, 超时: %ds)...\n",
 		len(urls), *workers, *timeout)
 
-	client := checker.CreateClient(!*noSSLVerify)
-	_ = *verbose
+	var proxyURL *url.URL
+	if *proxyStr != "" {
+		var err error
+		proxyURL, err = url.Parse(*proxyStr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "错误: 无效的代理地址: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("使用代理: %s\n", proxyURL.Host)
+	}
+
+	client := checker.CreateClient(proxyURL)
 
 	sem := make(chan struct{}, *workers)
 
-	var wg util.WaitGroup
+	var wg sync.WaitGroup
 	resultChan := make(chan checker.Result, len(urls)*2)
 	var completed int64
-	total := len(urls) * 2
 
 	for _, rawURL := range urls {
 		if util.IsShuttingDown() {
@@ -72,8 +83,8 @@ func main() {
 			results := checker.MakeRequest(url, *timeout, headers, client)
 			for _, result := range results {
 				resultChan <- result
-				completed++
-				output.DisplayResult(result, int(completed), total)
+				n := int(atomic.AddInt64(&completed, 1))
+				output.DisplayResult(result, n, len(resultChan))
 			}
 		}(rawURL)
 	}

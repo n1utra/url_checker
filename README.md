@@ -1,29 +1,29 @@
 # URL Checker
 
-批量URL请求工具，Go语言编写。
+批量URL请求工具，Go语言编写，核心特性是保持原始URL不变发送，绕过标准库URL规范化。
 
 ## 功能特性
 
 - 批量请求：支持从文本文件批量读取URL进行请求
-- 原始URL保持：不过滤或规范化URL特殊字符
+- 原始URL保持：通过自定义RawTransport绕过标准库URL规范化
 - 自动协议探测：无协议的URL自动尝试 http:// 和 https://
 - 自定义请求头：支持添加自定义HTTP请求头
 - 并发请求：支持多线程并发加速
-- CSV导出：成功和失败结果分别导出到不同文件
-- 自动重试：网络波动时自动指数退避重试（最多3次）
-- 代理支持：支持HTTP/HTTPS/SOCKS5/SOCKS4代理
+- 默认跳过SSL验证：避免证书问题导致的请求失败
+- 代理支持：支持HTTP/HTTPS代理（含认证）
+- XLSX输出：成功/失败结果分sheet保存，Excel可直接打开
 - 优雅终止：支持Ctrl+C安全终止
 
 ## 构建
 
 ```bash
-go build -o url-checker.exe *.go
+go build -o url-checker.exe ./cmd/url-checker/
 ```
 
 ## 使用方法
 
 ```bash
-./url-checker.exe -i urls.txt -o result.csv
+./url-checker.exe -i urls.txt
 ```
 
 ## 参数说明
@@ -31,13 +31,11 @@ go build -o url-checker.exe *.go
 | 参数 | 简写 | 默认值 | 说明 |
 |------|------|--------|------|
 | --input | -i | 必需 | 输入文件路径 |
-| --output | -o | result.csv | 输出CSV文件路径 |
+| --output | -o | result.xlsx | 输出XLSX文件路径 |
 | --timeout | -t | 10 | 超时秒数 |
 | --workers | -w | 10 | 并发数 |
 | --headers | -H | - | 请求头，格式: "Key1: value1, Key2: value2" |
-| --proxy | -p | - | 代理地址 |
-| --no-ssl-verify | - | false | 禁用SSL验证 |
-| --verbose | -v | false | 详细日志 |
+| --proxy | - | - | 代理地址，格式: http://[user:pass@]host:port |
 
 ## 输入文件格式
 
@@ -53,10 +51,12 @@ http://example.org/path
 
 ## 输出文件
 
-- `result.csv` - 成功结果
-- `result_error.csv` - 失败结果
+输出为 `result.xlsx`，包含两个sheet：
 
-### result.csv 表头
+- **res** - 成功结果
+- **err** - 失败结果
+
+### res sheet 表头
 
 | 列名 | 说明 |
 |------|------|
@@ -69,7 +69,7 @@ http://example.org/path
 | 响应标题 | HTML title或空 |
 | 响应正文前100字符 | 响应内容预览 |
 
-### result_error.csv 表头
+### err sheet 表头
 
 | 列名 | 说明 |
 |------|------|
@@ -86,7 +86,7 @@ http://example.org/path
 
 ### 指定输出文件
 ```bash
-./url-checker.exe -i urls.txt -o output.csv
+./url-checker.exe -i urls.txt -o result.xlsx
 ```
 
 ### 自定义请求头
@@ -96,15 +96,15 @@ http://example.org/path
 
 ### 使用代理
 ```bash
-./url-checker.exe -i urls.txt -p http://127.0.0.1:8080
+./url-checker.exe -i urls.txt --proxy http://127.0.0.1:8080
+```
+
+### 带认证的代理
+```bash
+./url-checker.exe -i urls.txt --proxy http://user:pass@127.0.0.1:8080
 ```
 
 ### 调整超时和并发
 ```bash
 ./url-checker.exe -i urls.txt -t 30 -w 20
-```
-
-### 禁用SSL验证
-```bash
-./url-checker.exe -i urls.txt --no-ssl-verify
 ```
