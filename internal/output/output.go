@@ -21,43 +21,54 @@ func WriteResults(results []checker.Result, outputFile string) error {
 	f := excelize.NewFile()
 	defer f.Close()
 
-	f.DeleteSheet("Sheet1")
-
-	sheetRes := "res"
-	f.NewSheet(sheetRes)
-
-	sheetErr := "err"
-	f.NewSheet(sheetErr)
-
-	setHeader(f, sheetRes, []string{"ID", "URL", "域名/IP", "响应状态码", "Content-Type", "响应体长度", "响应标题", "响应正文前100字符"})
-	setHeader(f, sheetErr, []string{"ID", "URL", "错误信息"})
-
-	successCount := 0
-	errCount := 0
-
-	successID := 1
-	errID := 1
-
+	// 拆分为成功和失败列表
+	var successResults, errResults []checker.Result
 	for _, r := range results {
 		if r.Success {
-			writeSuccessRow(f, sheetRes, r, successID)
-			successID++
-			successCount++
+			successResults = append(successResults, r)
 		} else {
-			writeErrorRow(f, sheetErr, r, errID)
-			errID++
-			errCount++
+			errResults = append(errResults, r)
 		}
 	}
 
-	setColumnWidth(f, sheetRes, []float64{8, 50, 30, 12, 30, 12, 30, 50})
-	setColumnWidth(f, sheetErr, []float64{8, 50, 50})
+	// 按需创建sheet
+	if len(successResults) > 0 {
+		f.NewSheet("res")
+		setHeader(f, "res", []string{"ID", "URL", "域名/IP", "响应状态码", "Content-Type", "响应体长度", "响应标题", "响应正文前100字符"})
+		for i, r := range successResults {
+			writeSuccessRow(f, "res", r, i+1)
+		}
+		setColumnWidth(f, "res", []float64{8, 50, 30, 12, 30, 12, 30, 50})
+	}
+
+	if len(errResults) > 0 {
+		f.NewSheet("err")
+		setHeader(f, "err", []string{"ID", "URL", "错误信息"})
+		for i, r := range errResults {
+			writeErrorRow(f, "err", r, i+1)
+		}
+		setColumnWidth(f, "err", []float64{8, 50, 50})
+	}
+
+	// 删除默认Sheet1（在创建所需sheet之后删除，确保文件始终有一个sheet）
+	if len(successResults) > 0 || len(errResults) > 0 {
+		f.DeleteSheet("Sheet1")
+	}
+
+	// 设置第一个sheet为活动sheet
+	if len(successResults) > 0 {
+		idx, _ := f.GetSheetIndex("res")
+		f.SetActiveSheet(idx)
+	} else if len(errResults) > 0 {
+		idx, _ := f.GetSheetIndex("err")
+		f.SetActiveSheet(idx)
+	}
 
 	if err := f.SaveAs(outputFile); err != nil {
 		return fmt.Errorf("保存文件失败: %w", err)
 	}
 
-	fmt.Printf("%s结果已保存到: %s (成功: %d, 失败: %d)%s\n", util.ColorGreen, outputFile, successCount, errCount, util.ColorReset)
+	fmt.Printf("%s结果已保存到: %s (成功: %d, 失败: %d)%s\n", util.ColorGreen, outputFile, len(successResults), len(errResults), util.ColorReset)
 
 	return nil
 }
@@ -130,20 +141,22 @@ func DisplayResult(r checker.Result, completed, total int) {
 		title := r.Title
 		if title == "" {
 			title = "N/A"
-		} else if len([]rune(title)) > 30 {
-			title = string([]rune(title)[:30])
+		}
+		titleRunes := []rune(title)
+		if len(titleRunes) > 30 {
+			title = string(titleRunes[:30])
 		}
 
-		line := fmt.Sprintf("✓ %3d/%d  [%s]  %-45s [code] %3d  [len] %8d  [title] %s",
-			completed, total, protocol, displayURL, r.StatusCode, r.ContentLen, title)
+		line := fmt.Sprintf("%s %3d/%-3d  [%s]  %-45s  [code] %d  [len] %d  [title] %s",
+			"✓", completed, total, protocol, displayURL, r.StatusCode, r.ContentLen, title)
 		fmt.Println(colorize(line, color))
 	} else {
 		errMsg := r.Error
 		if errMsg == "" {
 			errMsg = "未知"
 		}
-		line := fmt.Sprintf("✗ %3d/%d  [%s]  %-45s [code] ---  [len]       0  [title] ---  %s",
-			completed, total, protocol, displayURL, errMsg)
+		line := fmt.Sprintf("%s %3d/%-3d  [%s]  %-45s  [code] ---  [len] 0  [title] ---  %s",
+			"✗", completed, total, protocol, displayURL, errMsg)
 		fmt.Println(colorize(line, util.ColorRed))
 	}
 }

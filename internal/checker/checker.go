@@ -9,14 +9,13 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"url-checker/internal/util"
 )
 
 const (
-	DefaultTimeout    = 10 * time.Second
-	MaxRetries        = 3
 	ContentPreviewLen = 100
 )
 
@@ -36,35 +35,49 @@ type Result struct {
 }
 
 // CreateClient 创建HTTP客户端（默认跳过SSL证书验证）
-func CreateClient(proxyURL *url.URL) *http.Client {
+func CreateClient(proxyURL *url.URL, timeout int) *http.Client {
 	transport := &RawTransport{
 		TLSConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		},
 		ProxyURL: proxyURL,
+		Timeout:  time.Duration(timeout) * time.Second,
 	}
 
 	return &http.Client{
 		Transport: transport,
-		Timeout:   DefaultTimeout,
+		Timeout:   time.Duration(timeout) * time.Second,
 	}
 }
 
-// MakeRequest 发送HTTP请求
+// MakeRequest 发送HTTP请求（HTTP和HTTPS并发尝试）
 func MakeRequest(rawURL string, timeout int, headers map[string]string, client *http.Client) []Result {
 	urls := util.GetURLsToTry(rawURL)
 	if len(urls) == 0 {
 		return nil
 	}
 
-	var results []Result
+	// 并发尝试HTTP和HTTPS
+	resultChan := make(chan Result, len(urls))
+	var wg sync.WaitGroup
+
 	for _, urlStr := range urls {
 		if util.IsShuttingDown() {
 			break
 		}
+		wg.Add(1)
+		go func(url string) {
+			defer wg.Done()
+			resultChan <- doRequest(url, timeout, headers, client)
+		}(urlStr)
+	}
 
-		result := doRequest(urlStr, timeout, headers, client)
-		results = append(results, result)
+	wg.Wait()
+	close(resultChan)
+
+	var results []Result
+	for r := range resultChan {
+		results = append(results, r)
 	}
 
 	return results
@@ -115,23 +128,27 @@ func doRequest(urlStr string, timeout int, headers map[string]string, client *ht
 func handleRequestError(urlStr, host string, err error, protocol string) Result {
 	errStr := err.Error()
 
-	if strings.Contains(errStr, "timeout") {
-		return makeErrorResult(urlStr, host, "请求超时", errStr, protocol)
+	if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "Timeout") {
+		return makeErrorResult(urlStr, host, "请求超时", "连接超时", protocol)
 	}
 	if strings.Contains(errStr, "TLS") || strings.Contains(errStr, "certificate") {
-		return makeErrorResult(urlStr, host, "SSL错误", errStr, protocol)
+		return makeErrorResult(urlStr, host, "SSL错误", "证书验证失败", protocol)
 	}
-	if strings.Contains(errStr, "connection") {
-		return makeErrorResult(urlStr, host, "连接错误", errStr, protocol)
+	if strings.Contains(errStr, "connection") || strings.Contains(errStr, "connect") {
+		return makeErrorResult(urlStr, host, "连接错误", "无法连接到目标", protocol)
+	}
+	if strings.Contains(errStr, "no such host") || strings.Contains(errStr, "DNS") {
+		return makeErrorResult(urlStr, host, "DNS错误", "域名解析失败", protocol)
 	}
 
 	return makeErrorResult(urlStr, host, "请求异常", errStr, protocol)
 }
 
 func makeErrorResult(url, host, errType, errMsg, protocol string) Result {
-	maxLen := 100
-	if len(errMsg) > maxLen {
-		errMsg = errMsg[:maxLen]
+	maxLen := 80
+	runes := []rune(errMsg)
+	if len(runes) > maxLen {
+		errMsg = string(runes[:maxLen])
 	}
 	return Result{
 		Success: false,

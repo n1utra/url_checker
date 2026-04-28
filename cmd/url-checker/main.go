@@ -60,13 +60,14 @@ func main() {
 		fmt.Printf("使用代理: %s\n", proxyURL.Host)
 	}
 
-	client := checker.CreateClient(proxyURL)
+	client := checker.CreateClient(proxyURL, *timeout)
 
 	sem := make(chan struct{}, *workers)
 
 	var wg sync.WaitGroup
 	resultChan := make(chan checker.Result, len(urls)*2)
 	var completed int64
+	total := len(urls) * 2
 
 	for _, rawURL := range urls {
 		if util.IsShuttingDown() {
@@ -84,7 +85,7 @@ func main() {
 			for _, result := range results {
 				resultChan <- result
 				n := int(atomic.AddInt64(&completed, 1))
-				output.DisplayResult(result, n, len(resultChan))
+				output.DisplayResult(result, n, total)
 			}
 		}(rawURL)
 	}

@@ -17,6 +17,7 @@ import (
 type RawTransport struct {
 	TLSConfig *tls.Config
 	ProxyURL  *url.URL
+	Timeout   time.Duration
 }
 
 // RoundTrip 实现http.RoundTripper接口
@@ -40,8 +41,13 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	var conn net.Conn
 	var err error
 
+	t := rt.Timeout
+	if t == 0 {
+		t = 10 * time.Second
+	}
+
 	dialer := &net.Dialer{
-		Timeout: 30 * time.Second,
+		Timeout: t,
 	}
 
 	// 确定连接目标和地址
@@ -104,7 +110,7 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	// 设置读写超时，防止连接建立后卡住
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(t)
 	conn.SetDeadline(deadline)
 
 	defer conn.Close()
@@ -165,12 +171,11 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	reader := bufio.NewReader(conn)
 
-	// 读取状态行时设置更短的超时
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	conn.SetReadDeadline(time.Now().Add(t))
 
 	statusLine, err := reader.ReadString('\n')
 	if err != nil {
-		return nil, fmt.Errorf("读取状态行超时: %w", err)
+		return nil, fmt.Errorf("读取响应超时: %w", err)
 	}
 	// 恢复整体 deadline
 	conn.SetDeadline(deadline)
@@ -220,6 +225,10 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // proxyConnect 发送CONNECT请求建立HTTPS隧道
 func (rt *RawTransport) proxyConnect(conn net.Conn, targetAddr string) error {
+	timeout := rt.Timeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
 	req := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n", targetAddr, targetAddr)
 
 	if rt.ProxyURL.User != nil {
@@ -232,11 +241,11 @@ func (rt *RawTransport) proxyConnect(conn net.Conn, targetAddr string) error {
 		return fmt.Errorf("发送CONNECT请求失败: %w", err)
 	}
 
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	conn.SetReadDeadline(time.Now().Add(timeout))
 	reader := bufio.NewReader(conn)
 	statusLine, err := reader.ReadString('\n')
 	if err != nil {
-		return fmt.Errorf("读取CONNECT响应失败: %w", err)
+		return fmt.Errorf("代理CONNECT超时: %w", err)
 	}
 	// 恢复 deadline在调用方处理
 
