@@ -1,4 +1,4 @@
-# URL Checker v1.1
+# URL Checker v1.2
 
 批量URL请求工具，Go语言编写，核心特性是保持原始URL不变发送，绕过标准库URL规范化。
 
