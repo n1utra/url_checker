@@ -137,7 +137,7 @@ func handleRequestError(urlStr, host string, err error, protocol string) Result 
 	if strings.Contains(errStr, "connection") || strings.Contains(errStr, "connect") {
 		return makeErrorResult(urlStr, host, "连接错误", "无法连接到目标", protocol)
 	}
-	if strings.Contains(errStr, "no such host") || strings.Contains(errStr, "DNS") {
+	if !util.IsIP(host) && (strings.Contains(errStr, "no such host") || strings.Contains(errStr, "DNS")) {
 		return makeErrorResult(urlStr, host, "DNS错误", "域名解析失败", protocol)
 	}
 

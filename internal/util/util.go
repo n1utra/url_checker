@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/signal"
@@ -125,6 +126,16 @@ func ExtractHost(input string) string {
 	}
 
 	return input
+}
+
+// IsIP 判断输入是否为IP地址（不含端口）
+func IsIP(input string) bool {
+	// 去掉端口部分再判断
+	host := input
+	if h, _, err := net.SplitHostPort(input); err == nil {
+		host = h
+	}
+	return net.ParseIP(host) != nil
 }
 
 // GetURLsToTry 返回要尝试的URL列表

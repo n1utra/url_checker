@@ -22,9 +22,16 @@ type RawTransport struct {
 
 // RoundTrip 实现http.RoundTripper接口
 func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	host := req.URL.Host
-	if host == "" {
-		host = req.Host
+	// hostname 不含端口，用于拨号和TLS SNI
+	hostname := req.URL.Hostname()
+	if hostname == "" {
+		hostname = req.Host
+	}
+
+	// hostWithPort 含端口，用于HTTP Host头
+	hostWithPort := req.URL.Host
+	if hostWithPort == "" {
+		hostWithPort = req.Host
 	}
 
 	port := req.URL.Port()
@@ -36,7 +43,7 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 
-	targetAddr := net.JoinHostPort(host, port)
+	targetAddr := net.JoinHostPort(hostname, port)
 
 	var conn net.Conn
 	var err error
@@ -77,7 +84,7 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				tlsConfig = &tls.Config{}
 			}
 			tlsConn := tls.Client(conn, &tls.Config{
-				ServerName:         host,
+				ServerName:         hostname,
 				InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
 			})
 			if err := tlsConn.Handshake(); err != nil {
@@ -98,7 +105,7 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				tlsConfig = &tls.Config{}
 			}
 			tlsConn := tls.Client(conn, &tls.Config{
-				ServerName:         host,
+				ServerName:         hostname,
 				InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
 			})
 			if err := tlsConn.Handshake(); err != nil {
@@ -130,7 +137,7 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		requestLine = fmt.Sprintf("%s %s HTTP/1.1\r\n", req.Method, path)
 	}
 
-	headerLines := []string{fmt.Sprintf("Host: %s", host)}
+	headerLines := []string{fmt.Sprintf("Host: %s", hostWithPort)}
 
 	for key, values := range req.Header {
 		if strings.EqualFold(key, "Host") {
