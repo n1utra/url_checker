@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"url-checker/internal/util"
 )
 
 // RawTransport 直接使用原始URL发送请求，绕过标准库URL规范化
@@ -66,10 +68,13 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 		proxyAddr := net.JoinHostPort(proxyHost, proxyPort)
 
+		util.VerboseKeyValue("代理", proxyAddr)
+		util.VerboseLog("TCP 拨号 %s...", proxyAddr)
 		conn, err = dialer.Dial("tcp", proxyAddr)
 		if err != nil {
 			return nil, fmt.Errorf("连接代理失败: %w", err)
 		}
+		util.VerboseLog("TCP 连接成功 (代理)")
 
 		if req.URL.Scheme == "https" {
 			// HTTPS通过代理: CONNECT隧道
@@ -78,11 +83,13 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				conn.Close()
 				return nil, err
 			}
+			util.VerboseLog("CONNECT 隧道已建立 -> %s", targetAddr)
 
 			tlsConfig := rt.TLSConfig
 			if tlsConfig == nil {
 				tlsConfig = &tls.Config{}
 			}
+			util.VerboseLog("TLS 握手... (SNI: %s)", hostname)
 			tlsConn := tls.Client(conn, &tls.Config{
 				ServerName:         hostname,
 				InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
@@ -91,19 +98,23 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				conn.Close()
 				return nil, fmt.Errorf("TLS握手失败: %w", err)
 			}
+			util.VerboseLog("TLS 握手成功")
 			conn = tlsConn
 		}
 	} else {
+		util.VerboseLog("TCP 拨号 %s...", targetAddr)
 		conn, err = dialer.Dial("tcp", targetAddr)
 		if err != nil {
 			return nil, err
 		}
+		util.VerboseLog("TCP 连接成功")
 
 		if req.URL.Scheme == "https" {
 			tlsConfig := rt.TLSConfig
 			if tlsConfig == nil {
 				tlsConfig = &tls.Config{}
 			}
+			util.VerboseLog("TLS 握手... (SNI: %s)", hostname)
 			tlsConn := tls.Client(conn, &tls.Config{
 				ServerName:         hostname,
 				InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
@@ -112,6 +123,7 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				conn.Close()
 				return nil, fmt.Errorf("TLS握手失败: %w", err)
 			}
+			util.VerboseLog("TLS 握手成功")
 			conn = tlsConn
 		}
 	}
@@ -172,6 +184,7 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	request.WriteString("\r\n")
 
+	util.VerboseKeyValue("请求", fmt.Sprintf("%s %s", req.Method, req.URL.String()))
 	if _, err := conn.Write([]byte(request.String())); err != nil {
 		return nil, err
 	}
