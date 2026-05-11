@@ -51,7 +51,7 @@ func CreateClient(proxyURL *url.URL, timeout int) *http.Client {
 }
 
 // MakeRequest 发送HTTP请求（HTTP和HTTPS并发尝试）
-func MakeRequest(rawURL string, timeout int, headers map[string]string, client *http.Client) []Result {
+func MakeRequest(rawURL string, timeout int, headers map[string]string, client *http.Client, seqBase, total int) []Result {
 	urls := util.GetURLsToTry(rawURL)
 	if len(urls) == 0 {
 		return nil
@@ -61,15 +61,15 @@ func MakeRequest(rawURL string, timeout int, headers map[string]string, client *
 	resultChan := make(chan Result, len(urls))
 	var wg sync.WaitGroup
 
-	for _, urlStr := range urls {
+	for i, urlStr := range urls {
 		if util.IsShuttingDown() {
 			break
 		}
 		wg.Add(1)
-		go func(url string) {
+		go func(url string, seq int) {
 			defer wg.Done()
-			resultChan <- doRequest(url, timeout, headers, client)
-		}(urlStr)
+			resultChan <- doRequest(url, timeout, headers, client, seq, total)
+		}(urlStr, seqBase+i)
 	}
 
 	wg.Wait()
@@ -83,12 +83,18 @@ func MakeRequest(rawURL string, timeout int, headers map[string]string, client *
 	return results
 }
 
-func doRequest(urlStr string, timeout int, headers map[string]string, client *http.Client) Result {
+func doRequest(urlStr string, timeout int, headers map[string]string, client *http.Client, seq, total int) Result {
 	host := util.ExtractHost(urlStr)
+	protocol := getProtocol(urlStr)
+
+	util.VerboseHeader(seq, total, urlStr)
+	util.VerboseKeyValue("协议", protocol)
+	util.VerboseKeyValue("目标", host)
 
 	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
-		return makeErrorResult(urlStr, host, "请求构建失败", err.Error(), getProtocol(urlStr))
+		util.VerboseKeyValue("错误", err.Error())
+		return makeErrorResult(urlStr, host, "请求构建失败", err.Error(), protocol)
 	}
 
 	for key, value := range headers {
@@ -97,19 +103,32 @@ func doRequest(urlStr string, timeout int, headers map[string]string, client *ht
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return handleRequestError(urlStr, host, err, getProtocol(urlStr))
+		result := handleRequestError(urlStr, host, err, protocol)
+		if util.IsVerbose() {
+			fmt.Printf("  ✗ %s\n", result.Error)
+		}
+		return result
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
 	if err != nil {
-		return makeErrorResult(urlStr, host, "响应读取失败", err.Error(), getProtocol(urlStr))
+		util.VerboseKeyValue("错误", err.Error())
+		return makeErrorResult(urlStr, host, "响应读取失败", err.Error(), protocol)
 	}
 	contentLen := len(body)
 
 	contentType := resp.Header.Get("Content-Type")
 	title := extractTitle(string(body))
 	contentHash := md5Hash(body)
+
+	util.VerboseKeyValue("响应", fmt.Sprintf("%d %s | %s | %d bytes", resp.StatusCode, http.StatusText(resp.StatusCode), contentType, contentLen))
+	if title != "" {
+		util.VerboseKeyValue("标题", title)
+	}
+	if util.IsVerbose() {
+		fmt.Printf("  ✓ 成功\n")
+	}
 
 	return Result{
 		Success:     true,
@@ -121,7 +140,7 @@ func doRequest(urlStr string, timeout int, headers map[string]string, client *ht
 		Title:       title,
 		Content:     truncate(body, ContentPreviewLen),
 		ContentHash: contentHash,
-		Protocol:    getProtocol(urlStr),
+		Protocol:    protocol,
 	}
 }
 

@@ -21,8 +21,12 @@ func main() {
 	workers := flag.Int("w", 10, "并发线程数")
 	headersStr := flag.String("H", "", "自定义请求头，格式: Header1: value1, Header2: value2")
 	proxyStr := flag.String("proxy", "", "代理地址, 格式: http://[user:pass@]host:port")
+	verbose := flag.Bool("v", false, "详细日志模式（输出完整请求链路）")
+	verboseLong := flag.Bool("verbose", false, "详细日志模式（同 -v）")
 
 	flag.Parse()
+
+	util.SetVerbose(*verbose || *verboseLong)
 
 	if *inputFile == "" {
 		fmt.Fprintln(os.Stderr, "错误: 必须指定输入文件 (-i)")
@@ -69,7 +73,7 @@ func main() {
 	var completed int64
 	total := len(urls) * 2
 
-	for _, rawURL := range urls {
+	for idx, rawURL := range urls {
 		if util.IsShuttingDown() {
 			break
 		}
@@ -77,17 +81,17 @@ func main() {
 		sem <- struct{}{}
 
 		wg.Add(1)
-		go func(url string) {
+		go func(url string, inputIdx int) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			results := checker.MakeRequest(url, *timeout, headers, client)
+			results := checker.MakeRequest(url, *timeout, headers, client, inputIdx*2+1, total)
 			for _, result := range results {
 				resultChan <- result
 				n := int(atomic.AddInt64(&completed, 1))
-				output.DisplayResult(result, n, total)
+				if !util.IsVerbose() { output.DisplayResult(result, n, total) }
 			}
-		}(rawURL)
+		}(rawURL, idx)
 	}
 
 	wg.Wait()
