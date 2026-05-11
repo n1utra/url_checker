@@ -1,18 +1,27 @@
-# URL Checker v1.2
+# URL Checker v1.3
 
 批量URL请求工具，Go语言编写。
 
 ## 更新日志
 
+### v1.3 (2026-05-07)
+- **新增**: `-v` / `--verbose` 详细日志模式，输出完整请求链路（协议、TCP拨号、TLS握手、请求行、响应）
+- **新增**: `--proto` 参数，指定仅使用 HTTP 或 HTTPS（仅对无协议前缀的 URL 生效）
+- **修复**: 内网环境下拨号挂起导致程序卡死 — `Dial` 改为 `DialContext`，信号量移入 goroutine 内部
+- **修复**: TLS 握手阶段无超时保护导致卡死
+- **修复**: verbose 模式下并发请求日志交错输出
+
 ### v1.2 (2026-05-07)
-- **修复**: IP 目标端口重复拼接问题 — `transport.go` 中 `req.URL.Host` 已含端口，`JoinHostPort` 二次拼接导致拨号地址错误（如 `192.168.1.1:8080:8080`）
-- **修复**: IP 目标错误误分类为 DNS 错误 — 新增 `IsIP()` 检测，IP 目标不再归类为域名解析失败
+- **修复**: IP 目标端口重复拼接问题
+- **修复**: IP 目标错误误分类为 DNS 错误
 
 ## 功能特性
 
 - 批量请求：支持从文本文件批量读取URL进行请求
 - 原始URL保持：通过自定义RawTransport绕过标准库URL规范化
 - 自动协议探测：无协议的URL自动尝试 http:// 和 https://
+- 协议过滤：`--proto` 参数可限定仅使用 HTTP 或 HTTPS
+- 详细日志：`-v` 输出完整请求链路，便于排查问题
 - 代理支持：支持HTTP/HTTPS代理（含认证）
 - XLSX输出：成功/失败结果分sheet保存
 
@@ -38,6 +47,8 @@ go build -o url-checker.exe ./cmd/url-checker/
 | --workers | -w | 10 | 并发数 |
 | --headers | -H | - | 请求头，格式: "Key1: value1, Key2: value2" |
 | --proxy | - | - | 代理地址，格式: http://[user:pass@]host:port |
+| --verbose | -v | false | 详细日志模式，输出完整请求链路 |
+| --proto | - | 两种 | 仅使用指定协议: http 或 https |
 
 ## 输入文件格式
 
@@ -84,6 +95,16 @@ http://example.org/path
 ### 基本用法
 ```bash
 ./url-checker.exe -i urls.txt
+```
+
+### 详细日志模式
+```bash
+./url-checker.exe -v -i urls.txt
+```
+
+### 仅使用 HTTPS
+```bash
+./url-checker.exe --proto https -i urls.txt
 ```
 
 ### 指定输出文件
