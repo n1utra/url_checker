@@ -50,9 +50,9 @@ func CreateClient(proxyURL *url.URL, timeout int) *http.Client {
 	}
 }
 
-// MakeRequest 发送HTTP请求（HTTP和HTTPS并发尝试）
-func MakeRequest(rawURL string, timeout int, headers map[string]string, client *http.Client, seqBase, total int) []Result {
-	urls := util.GetURLsToTry(rawURL)
+// MakeRequest 发送HTTP请求
+func MakeRequest(rawURL string, timeout int, headers map[string]string, client *http.Client, proto string, seqBase, total int) []Result {
+	urls := util.GetURLsToTry(rawURL, proto)
 	if len(urls) == 0 {
 		return nil
 	}

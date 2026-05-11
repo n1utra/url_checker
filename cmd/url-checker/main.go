@@ -23,6 +23,7 @@ func main() {
 	proxyStr := flag.String("proxy", "", "代理地址, 格式: http://[user:pass@]host:port")
 	verbose := flag.Bool("v", false, "详细日志模式（输出完整请求链路）")
 	verboseLong := flag.Bool("verbose", false, "详细日志模式（同 -v）")
+	proto := flag.String("proto", "", "仅使用指定协议: http 或 https（默认两种都尝试）")
 
 	flag.Parse()
 
@@ -69,9 +70,14 @@ func main() {
 	sem := make(chan struct{}, *workers)
 
 	var wg sync.WaitGroup
-	resultChan := make(chan checker.Result, len(urls)*2)
+	// 根据协议过滤计算总请求数
+	reqPerURL := 2
+	if *proto == "http" || *proto == "https" {
+		reqPerURL = 1
+	}
+	resultChan := make(chan checker.Result, len(urls)*reqPerURL)
 	var completed int64
-	total := len(urls) * 2
+	total := len(urls) * reqPerURL
 
 	for idx, rawURL := range urls {
 		if util.IsShuttingDown() {
@@ -84,7 +90,7 @@ func main() {
 			defer func() { <-sem }()
 			defer wg.Done()
 
-			results := checker.MakeRequest(url, *timeout, headers, client, inputIdx*2+1, total)
+			results := checker.MakeRequest(url, *timeout, headers, client, *proto, inputIdx*reqPerURL+1, total)
 			for _, result := range results {
 				resultChan <- result
 				n := int(atomic.AddInt64(&completed, 1))

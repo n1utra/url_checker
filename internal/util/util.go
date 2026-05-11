@@ -143,20 +143,36 @@ func IsIP(input string) bool {
 	return net.ParseIP(host) != nil
 }
 
-// GetURLsToTry 返回要尝试的URL列表
-func GetURLsToTry(rawURL string) []string {
+// GetURLsToTry 返回要尝试的URL列表，proto 为空或 "both" 时两种协议都返回
+func GetURLsToTry(rawURL string, proto string) []string {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
 		return []string{}
 	}
 
-	if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
+	hasScheme := strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://")
+
+	if hasScheme {
+		if proto == "http" && strings.HasPrefix(rawURL, "https://") {
+			return []string{}
+		}
+		if proto == "https" && strings.HasPrefix(rawURL, "http://") {
+			return []string{}
+		}
 		return []string{rawURL}
 	}
 
-	return []string{
-		"http://" + rawURL,
-		"https://" + rawURL,
+	// 无协议前缀，根据 proto 参数生成
+	switch proto {
+	case "http":
+		return []string{"http://" + rawURL}
+	case "https":
+		return []string{"https://" + rawURL}
+	default:
+		return []string{
+			"http://" + rawURL,
+			"https://" + rawURL,
+		}
 	}
 }
 
