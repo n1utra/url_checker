@@ -78,12 +78,11 @@ func main() {
 			break
 		}
 
-		sem <- struct{}{}
-
 		wg.Add(1)
 		go func(url string, inputIdx int) {
-			defer wg.Done()
+			sem <- struct{}{}
 			defer func() { <-sem }()
+			defer wg.Done()
 
 			results := checker.MakeRequest(url, *timeout, headers, client, inputIdx*2+1, total)
 			for _, result := range results {

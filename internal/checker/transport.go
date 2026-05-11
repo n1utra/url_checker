@@ -70,7 +70,7 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		util.VerboseKeyValue("代理", proxyAddr)
 		util.VerboseLog("TCP 拨号 %s...", proxyAddr)
-		conn, err = dialer.Dial("tcp", proxyAddr)
+		conn, err = dialer.DialContext(req.Context(), "tcp", proxyAddr)
 		if err != nil {
 			return nil, fmt.Errorf("连接代理失败: %w", err)
 		}
@@ -103,7 +103,7 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	} else {
 		util.VerboseLog("TCP 拨号 %s...", targetAddr)
-		conn, err = dialer.Dial("tcp", targetAddr)
+		conn, err = dialer.DialContext(req.Context(), "tcp", targetAddr)
 		if err != nil {
 			return nil, err
 		}
