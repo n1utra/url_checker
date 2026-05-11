@@ -90,6 +90,7 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				tlsConfig = &tls.Config{}
 			}
 			util.VerboseLog("TLS 握手... (SNI: %s)", hostname)
+			conn.SetDeadline(time.Now().Add(t))
 			tlsConn := tls.Client(conn, &tls.Config{
 				ServerName:         hostname,
 				InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
@@ -115,6 +116,7 @@ func (rt *RawTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				tlsConfig = &tls.Config{}
 			}
 			util.VerboseLog("TLS 握手... (SNI: %s)", hostname)
+			conn.SetDeadline(time.Now().Add(t))
 			tlsConn := tls.Client(conn, &tls.Config{
 				ServerName:         hostname,
 				InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
