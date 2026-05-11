@@ -87,6 +87,9 @@ func doRequest(urlStr string, timeout int, headers map[string]string, client *ht
 	host := util.ExtractHost(urlStr)
 	protocol := getProtocol(urlStr)
 
+	util.VerboseLock()
+	defer util.VerboseUnlock()
+
 	util.VerboseHeader(seq, total, urlStr)
 	util.VerboseKeyValue("协议", protocol)
 	util.VerboseKeyValue("目标", host)

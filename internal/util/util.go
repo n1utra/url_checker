@@ -22,6 +22,8 @@ var (
 
 	verboseFlag bool
 	verboseMu   sync.RWMutex
+
+	verbosePrintMu sync.Mutex
 )
 
 // InitSignalHandler 初始化信号处理器
@@ -190,5 +192,19 @@ func VerboseHeader(seq, total int, urlStr string) {
 func VerboseKeyValue(key, value string) {
 	if IsVerbose() {
 		fmt.Printf("  [%s] %s\n", key, value)
+	}
+}
+
+// VerboseLock 获取 verbose 输出锁，确保一个请求的日志块不被打断
+func VerboseLock() {
+	if IsVerbose() {
+		verbosePrintMu.Lock()
+	}
+}
+
+// VerboseUnlock 释放 verbose 输出锁
+func VerboseUnlock() {
+	if IsVerbose() {
+		verbosePrintMu.Unlock()
 	}
 }
