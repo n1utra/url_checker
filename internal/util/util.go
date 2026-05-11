@@ -19,6 +19,9 @@ var (
 	shutdownCtx    context.Context
 	shutdownCancel context.CancelFunc
 	initOnce       sync.Once
+
+	verboseFlag bool
+	verboseMu   sync.RWMutex
 )
 
 // InitSignalHandler 初始化信号处理器
@@ -152,5 +155,40 @@ func GetURLsToTry(rawURL string) []string {
 	return []string{
 		"http://" + rawURL,
 		"https://" + rawURL,
+	}
+}
+
+// SetVerbose 设置详细日志模式
+func SetVerbose(v bool) {
+	verboseMu.Lock()
+	defer verboseMu.Unlock()
+	verboseFlag = v
+}
+
+// IsVerbose 返回当前是否为详细日志模式
+func IsVerbose() bool {
+	verboseMu.RLock()
+	defer verboseMu.RUnlock()
+	return verboseFlag
+}
+
+// VerboseLog 在 verbose 模式下输出缩进日志
+func VerboseLog(format string, args ...interface{}) {
+	if IsVerbose() {
+		fmt.Printf("  "+format+"\n", args...)
+	}
+}
+
+// VerboseHeader 输出 verbose 块头部
+func VerboseHeader(seq, total int, urlStr string) {
+	if IsVerbose() {
+		fmt.Printf("\n═══ [%d/%d] %s ═══\n", seq, total, urlStr)
+	}
+}
+
+// VerboseKeyValue 输出键值对形式的日志
+func VerboseKeyValue(key, value string) {
+	if IsVerbose() {
+		fmt.Printf("  [%s] %s\n", key, value)
 	}
 }
