@@ -150,15 +150,8 @@ func GetURLsToTry(rawURL string, proto string) []string {
 		return []string{}
 	}
 
-	hasScheme := strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://")
-
-	if hasScheme {
-		if proto == "http" && strings.HasPrefix(rawURL, "https://") {
-			return []string{}
-		}
-		if proto == "https" && strings.HasPrefix(rawURL, "http://") {
-			return []string{}
-		}
+	// 已有协议前缀的URL直接使用，不受 --proto 限制
+	if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
 		return []string{rawURL}
 	}
 
