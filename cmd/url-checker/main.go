@@ -70,14 +70,16 @@ func main() {
 	sem := make(chan struct{}, *workers)
 
 	var wg sync.WaitGroup
-	// 根据协议过滤计算总请求数
-	reqPerURL := 2
-	if *proto == "http" || *proto == "https" {
-		reqPerURL = 1
+
+	// 预计算实际请求总数（有协议前缀的URL只产生1条请求）
+	total := 0
+	seqStart := make([]int, len(urls))
+	for i, u := range urls {
+		seqStart[i] = total
+		total += len(util.GetURLsToTry(u, *proto))
 	}
-	resultChan := make(chan checker.Result, len(urls)*reqPerURL)
+	resultChan := make(chan checker.Result, total)
 	var completed int64
-	total := len(urls) * reqPerURL
 
 	for idx, rawURL := range urls {
 		if util.IsShuttingDown() {
@@ -85,18 +87,18 @@ func main() {
 		}
 
 		wg.Add(1)
-		go func(url string, inputIdx int) {
+		go func(url string, seqBase int) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			defer wg.Done()
 
-			results := checker.MakeRequest(url, *timeout, headers, client, *proto, inputIdx*reqPerURL+1, total)
+			results := checker.MakeRequest(url, *timeout, headers, client, *proto, seqBase+1, total)
 			for _, result := range results {
 				resultChan <- result
 				n := int(atomic.AddInt64(&completed, 1))
 				if !util.IsVerbose() { output.DisplayResult(result, n, total) }
 			}
-		}(rawURL, idx)
+		}(rawURL, seqStart[idx])
 	}
 
 	wg.Wait()
